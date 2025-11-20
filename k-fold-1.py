@@ -7,10 +7,12 @@ import gc
 from tensorflow.keras.callbacks import CSVLogger, ModelCheckpoint
 from tensorflow.keras import mixed_precision
 from tensorflow.keras.preprocessing.image import ImageDataGenerator
-from tensorflow.keras.applications import MobileNetV2, VGG19, VGG16
+from tensorflow.keras.applications import MobileNetV2, VGG19, VGG16, ResNet50, InceptionV3
 from tensorflow.keras.applications.mobilenet_v2 import preprocess_input as mobilenet_preprocess
 from tensorflow.keras.applications.vgg19 import preprocess_input as vgg19_preprocess
 from tensorflow.keras.applications.vgg16 import preprocess_input as vgg16_preprocess
+from tensorflow.keras.applications.resnet50 import preprocess_input as resnet_preprocess
+from tensorflow.keras.applications.inception_v3 import preprocess_input as inception_preprocess
 from tensorflow.keras import models, layers
 from tensorflow.keras.optimizers import Adam
 from sklearn.model_selection import StratifiedKFold
@@ -19,13 +21,13 @@ import sys
 policy = mixed_precision.Policy('mixed_float16')
 mixed_precision.set_global_policy(policy)
 
-list_CNNs = ['MobileNetV2', 'VGG19', 'VGG16']
-
+# Adicionar o Resnet50 para testar
+list_CNNs = ['MobileNetV2', 'VGG19', 'VGG16', 'ResNet50', 'InceptionV3'] 
 i = 1
 for CNN in list_CNNs:
     print(f"Digite {i} para usar {CNN}")
     i += 1
-number_CNN = int(input("Escolha o modelo (1, 2, ou 3): "))
+number_CNN = int(input("Escolha o modelo (1, 2, 3, 4 ou 5): "))
 name_model = "" 
 
 
@@ -38,6 +40,13 @@ elif number_CNN == 2:
 elif number_CNN == 3:
     preprocessing_function = vgg16_preprocess 
     name_model = "VGG16"
+elif number_CNN == 4:
+    preprocessing_function = resnet_preprocess
+    name_model = "Resnet50"
+elif number_CNN == 5:
+    preprocessing_function = inception_preprocess
+    name_model = "InceptionV3"
+    
 else:
     raise ValueError(f"Modelo desconhecido: {number_CNN}")
 
@@ -119,6 +128,10 @@ def create_model_from_selection(selection):
         base_model = VGG19(weights='imagenet', include_top=False, input_shape=(TARGET_SIZE[0], TARGET_SIZE[1], 3))
     elif selection == 3:
         base_model = VGG16(weights='imagenet', include_top=False, input_shape=(TARGET_SIZE[0], TARGET_SIZE[1], 3))
+    elif selection == 4:
+        base_model = ResNet50(weights='imagenet', include_top=False, input_shape=(TARGET_SIZE[0], TARGET_SIZE[1], 3))
+    elif selection == 5:
+        base_model = InceptionV3(weights='imagenet', include_top=False, input_shape=(TARGET_SIZE[0], TARGET_SIZE[1], 3))
     
     base_model.trainable = False
     
