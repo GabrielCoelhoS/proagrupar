@@ -17,6 +17,12 @@ from tensorflow.keras import models, layers
 from tensorflow.keras.optimizers import Adam
 from sklearn.model_selection import StratifiedKFold
 import sys
+import matplotlib
+matplotlib.use('Agg')
+import matplotlib.pyplot as plt
+from sklearn.preprocessing import label_binarize
+from sklearn.metrics import roc_curve, auc
+from itertools import cycle
 
 policy = mixed_precision.Policy('mixed_float16')
 mixed_precision.set_global_policy(policy)
@@ -69,7 +75,7 @@ val_datagen = ImageDataGenerator(
 )
 
 
-BASE_DIR = os.path.expanduser("~/UNION FOLDS")
+BASE_DIR = os.path.expanduser("./UNION FOLDS")
 
 # Define os caminhos CORRETOS (Pool para Pool, Teste para Teste)
 POOL_DIR = os.path.join(BASE_DIR, "TRAIN_VAL_POOL")
@@ -88,7 +94,7 @@ verificar_diretorios()
 CLASSES = ["HBS", "ALL", "AML"]
 TARGET_SIZE = (224, 224)
 BATCH_SIZE = 64
-EPOCHS = 50
+EPOCHS = 2
 LEARNING_RATE = 0.0002
 DROPOUT_RATE = 0.2                                  
 K_FOLDS = 5
@@ -118,8 +124,20 @@ y_pool = np.array(all_labels)
 print(f"Total de {len(x_pool)} imagens carregadas no 'POOL' para K-FOLD ")
 
 
+def f1_score(y_true, y_pred):
+    y_pred_labels = tf.argmax(y_pred, axis=1)
+    y_true_labels = tf.argmax(y_true, axis=1)
+    y_pred_onehot = tf.one_hot(y_pred_labels, depth=len(CLASSES))
+    y_true_onehot = tf.one_hot(y_true_labels, depth=len(CLASSES))
+    tp = tf.reduce_sum(y_true_onehot * y_pred_onehot, axis=0)
+    fp = tf.reduce_sum((1 - y_true_onehot) * y_pred_onehot, axis=0)
+    fn = tf.reduce_sum(y_true_onehot * (1 - y_pred_onehot), axis=0)
+    precision = tp / (tp + fp + tf.keras.backend.epsilon())
+    recall = tp / (tp + fn + tf.keras.backend.epsilon())
+    f1 = 2 * precision * recall / (precision + recall + tf.keras.backend.epsilon())
+    return tf.reduce_mean(f1)
 
-# Chamar dentro do loop K-FOLD passando o modelo escolhido no incio
+
 def create_model_from_selection(selection):
     
     if selection == 1: 
@@ -148,7 +166,12 @@ def create_model_from_selection(selection):
     model.compile(
         optimizer=opt, 
         loss='categorical_crossentropy', 
-        metrics=['accuracy']
+        metrics=[
+            'accuracy',
+            tf.keras.metrics.Precision(name='precision'),
+            tf.keras.metrics.Recall(name='recall'),
+            f1_score
+        ]
     )
     return model
 
@@ -213,7 +236,7 @@ for train_indices, val_indices in skf.split(x_pool, y_pool):
     )
     
     print(f"Avaliando Fold {fold_number}...")
-    loss, accuracy = model.evaluate(val_generator)
+    loss, accuracy, precision, recall, f1score = model.evaluate(val_generator)
 
     print(f"Acurácia do Fold {fold_number}: {accuracy * 100:.2f}%")
     best_fold_accuracy = np.max(history.history['val_accuracy'])
@@ -277,7 +300,61 @@ history_final = final_model.fit(
     callbacks=[csv_logger_final],
 )
 
-test_loss, test_accuracy = final_model.evaluate(test_generator)
+test_loss, test_accuracy, test_precision, test_recall, teste_f1score = final_model.evaluate(test_generator)
+
+
+plt.figure(figsize=(18, 6))
+
+plt.plot(history_final.history['loss'], label='Loss (Treino)')
+if 'val_loss' in history_final.history:
+    plt.plot(history_final.history['val_loss'], label='Loss (Validação)')
+plt.plot(history_final.history.get('accuracy', []), label='Accuracy (Treino)')
+if 'val_accuracy' in history_final.history:
+    plt.plot(history_final.history['val_accuracy'], label='Accuracy (Validação)')
+plt.plot(history_final.history.get('precision', []), label='Precision (Treino)')
+if 'val_precision' in history_final.history:
+    plt.plot(history_final.history['val_precision'], label='Precision (Val)')
+plt.plot(history_final.history.get('recall', []), label='Recall (Treino)')
+if 'val_recall' in history_final.history:
+    plt.plot(history_final.history['val_recall'], label='Recall (Val)')
+plt.plot(history_final.history.get('f1_score', []), label='F1 (Treino)')
+if 'val_f1_score' in history_final.history:
+    plt.plot(history_final.history['val_f1_score'], label='F1 (Val)')
+plt.title('Accuracy / Loss / Precision / Recall / F1 por Época')
+plt.xlabel('Época')
+plt.ylabel('Score')
+plt.legend()
+
+plt.tight_layout()
+out_path_hist = f"logs/training_plots_{name_model}_{timestamp}.png"
+plt.savefig(out_path_hist)
+plt.close()
+print(f"Histórico salvo em: {out_path_hist}")
+
+y_pred_probs = final_model.predict(test_generator)
+y_true = test_generator.classes
+y_true_bin = label_binarize(y_true, classes=range(len(CLASSES)))
+n_classes = len(CLASSES)
+
+plt.figure(figsize=(8, 6))
+colors = cycle(['blue', 'red', 'green', 'orange', 'purple'])
+for i, color in zip(range(n_classes), colors):
+    fpr, tpr, _ = roc_curve(y_true_bin[:, i], y_pred_probs[:, i])
+    roc_auc = auc(fpr, tpr)
+    plt.plot(fpr, tpr, color=color, lw=2,
+             label=f'ROC classe {CLASSES[i]} (AUC = {roc_auc:.2f})')
+
+plt.plot([0, 1], [0, 1], 'k--', lw=2)
+plt.xlabel('Taxa de Falsos Positivos')
+plt.ylabel('Taxa de Verdadeiros Positivos')
+plt.title('Curva ROC Multiclasse')
+plt.legend(loc="lower right")
+plt.grid()
+out_path_roc = f"logs/roc_multiclass_{name_model}_{timestamp}.png"
+plt.savefig(out_path_roc)
+plt.close()
+print(f"ROC salvo em: {out_path_roc}")
+
 
 print("\n---- RESULTADO DA PROVA FINAL ---")
 print(f"Perda (loss) no Teste: {test_loss:.4f}")
