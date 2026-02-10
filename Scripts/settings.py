@@ -5,9 +5,9 @@ DEVICE = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 NUM_WORKERS = 2
 PIN_MEMORY = True if torch.cuda.is_available() else False
 
-BASE_DIR = os.path.expanduser("/mnt")
+BASE_DIR = os.path.expanduser("~/UNION FOLDS")
 POOL_DIR = os.path.join(BASE_DIR, "TRAIN_VAL_POOL")
-TESTE_DIR = os.path.join(BASE_DIR, "TESTE_SET")
+TESTE_DIR = os.path.join(BASE_DIR, "TEST_SET")
 
 CLASSES = ["ALL", "AML", "HBS"]
 CLASS_TO_IDX = {c: i for i, c in enumerate(CLASSES)}
@@ -20,6 +20,3 @@ K_FOLDS = 5
 
 SEED = 42
 
-BASE_DIR = os.path.expanduser("~/UNION FOLDS")
-POOL_DIR = os.path.join(BASE_DIR, "TRAIN_VAL_POOL")
-TESTE_DIR = os.path.join(BASE_DIR, "TEST_SET")

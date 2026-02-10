@@ -125,22 +125,30 @@ class VSSBlock(nn.Module):
     
     
 class HybridCNNMamba(nn.Module):
-    def __init__(self, num_classes):
+    def __init__(self, num_classes, depth=4):
         super().__init__()
         backbone = models.mobilenet_v2(weights='IMAGENET1K_V1')
         self.features = backbone.features
         
-        for param in self.features.parameters():
-            param.requires_grad = False
-        
+        for i, param in enumerate(self.features.parameters()):
+            if (i < 100):
+                param.requires_grad = False
+            else:
+                param.requires_grad = True
+                
         self.cnn_channels = 1280
         self.mamba_dim = 192
         
         self.adapter = nn.Linear(self.cnn_channels, self.mamba_dim)
         
-        #blocos VSS - 2 Blocos para dar profundidade
-        self.mamba1 = VSSBlock(d_model=self.mamba_dim, d_state=16)
-        self.mamba2 = VSSBlock(d_model=self.mamba_dim, d_state=16)
+        #pilha de blocos mamba - 2 Blocos para dar profundidade
+        self.layers = nn.ModuleList([
+            VSSBlock(d_model=self.mamba_dim, d_state=16)
+            for _ in range(depth)
+        ])
+        
+        
+        self.norm_f = nn.LayerNorm(self.mamba_dim)
          
         self.classifier = nn.Sequential(
             nn.Dropout(0.3),
@@ -154,12 +162,16 @@ class HybridCNNMamba(nn.Module):
         #Flatten para sequencia
         b, c, h, w = x.shape
         x = x.view(b, c, h * w).permute(0, 2, 1) #[B, L, 1280]
+         
+        x = self.adapter(x)
         
-        #Mamba Core
-        x = self.adapter(x) #[B, L, 192]
-        x = self.mamba1(x) #Scan1 
-        x = self.mamba2(x) #Scan2
+        #Mamba core
+        for layer in self.layers:
+            x = layer(x)
         
+        #normalização final
+        x = self.norm_f(x)
+            
         #pooling e classificação
         x = x.mean(dim=1)
         return self.classifier(x)

@@ -8,61 +8,24 @@ from PIL import Image
 from collections import Counter
 import settings
 
-#converte variações de cor pro ideal (LAB)
-#conversão de RGB para LAB (L=Lightness, A=Green-Red, B=Blue-Yellow)
-class ReinhardNormalizer: 
-    def __init__(self):
-        self.target_means = [226.60, 131.83, 121.30]
-        self.target_stds = [27.74, 5.38, 8.79]
-        
-    def transform(self, img_pil):
-        try:
-            img_np = np.array(img_pil)
-            
-            if (img_np.shape[-1] == 4):
-                img_np = img_np[:,:,:3]
-                
-            img_lab = cv2.cvtColor(img_np, cv2.COLOR_RGB2LAB).astype("float32")
-            
-            mu_l = np.mean(img_lab[:,:,0])
-            if mu_l > 200:
-                return img_pil
-            
-            for i in range(3):
-                mu = np.mean(img_lab[:,:,i])
-                sigma = np.std(img_lab[:,:,i])
-                
-                if (sigma == 0): sigma = 1e-5
-                
-                #formula de Reinhard = (Pixel - Media_Origem) * (Desvio_alvo / Desvio_Origem) + Media_alvo
-                img_lab[:,:,i] = ((img_lab[:,:,i] - mu) * (self.target_stds[i] / sigma) + self.target_means[i])
-            
-            img_lab = np.clip(img_lab, 0, 255).astype("uint8")
-            img_rgb = cv2.cvtColor(img_lab, cv2.COLOR_LAB2RGB)
-            
-            return Image.fromarray(img_rgb)
-        
-        except Exception as e:
-            #retornando a orginal para não quebrar o treino
-            #talvez logar o erro
-            return img_pil  
-        
-
+# --- CLASSE REINHARD REMOVIDA ---
+# Decisão de Design: Devido à alta heterogeneidade do dataset UNION (18 fontes),
+# a normalização estática estava introduzindo artefatos (cores neon/fundo verde).
+# Optamos por deixar a CNN aprender a invariância de cor via Data Augmentation.
 
 class LeukemiaDataset(Dataset):
     def __init__(self, filepaths, labels, transform=None, use_stain_norm=False):
         """
         Args:
-            filepaths: Lista de caminhos completos das imagens,
-            labels: Lista de labels numéricos (0, 1, 2),
-            transform: Transforms do torchvision (Resize, toTensor),
-            use_stain_norm: Se for verdade, aplica Reinhard antes do transform
+            filepaths: Lista de caminhos
+            labels: Lista de labels
+            transform: Transforms do torchvision
+            use_stain_norm: MANTIDO APENAS POR COMPATIBILIDADE, MAS NÃO FAZ NADA AGORA.
         """
         self.filepaths = filepaths
         self.labels = labels
         self.transform = transform
-        self.use_stain_norm = use_stain_norm
-        self.normalizer = ReinhardNormalizer() if use_stain_norm else None
+        # Ignoramos a flag use_stain_norm propositalmente
         
     def __len__(self):
         return len(self.filepaths)
@@ -72,35 +35,28 @@ class LeukemiaDataset(Dataset):
         label = self.labels[idx]
         
         try:
+            # 1. Carrega a imagem original (RAW)
             image = Image.open(img_path).convert("RGB")
             
-            #aplica normalização de Reinhard - se ativado no experimento
-            if self.use_stain_norm and self.normalizer:
-                image = self.normalizer.transform(image)
-            
-            #aplica resize e augmentations (x64, x128, x224, x512) 
+            # 2. Aplica apenas Transforms (Resize + Augmentations padrão)
             if self.transform:
                 image = self.transform(image)
             
             return image, label
         
         except Exception as e:
-            print(f"[ERRO] Erro ao ler a imagem {img_path}:{e}")
-            dummy_res = 224 #tamanho seguro
-            
+            print(f"[ERRO] Erro ao ler a imagem {img_path}: {e}")
+            dummy_res = 224
             if self.transform:
-                #tenta descobrir o tamanhp alvo pelo transform
                 for t in self.transform.transforms:
                     if isinstance(t, transforms.Resize):
                         dummy_res = t.size[0]
                         break
             return torch.zeros((3, dummy_res, dummy_res)), label
-        
+
+# --- Funções Auxiliares ---
+
 def get_all_filepaths(pool_dir):
-    """
-    varre a pasta TRAIN_VAL_POOL e retorna listas de caminhos e labels
-    essencial pra alimentar o k-fold
-    """
     filepaths = []
     labels = []
     
@@ -109,7 +65,7 @@ def get_all_filepaths(pool_dir):
         class_idx = settings.CLASS_TO_IDX[class_name]
         
         if not os.path.exists(class_dir):
-            print(f"[ERRO] Pasta da classe {class_name} não encontrada em {pool_dir}")
+            print(f"[ERRO] Pasta {class_name} não encontrada.")
             continue
         
         files = os.listdir(class_dir)
@@ -122,16 +78,22 @@ def get_all_filepaths(pool_dir):
     
 def get_transforms(resolution):
      """
-     gera os pipelines de transformação para treino e validação
-     recebe 'resolution' para os experimentos de 64 a 512px
+     Gera os pipelines.
+     AQUI ESTÁ O SEGREDO: Usamos ColorJitter para ensinar a rede a lidar com cores diferentes,
+     em vez de tentar consertar as cores antes.
      """
      train_transform = transforms.Compose([
          transforms.Resize((resolution, resolution)),
          transforms.RandomHorizontalFlip(),
          transforms.RandomVerticalFlip(),
          transforms.RandomRotation(30),
-         transforms.ColorJitter(brightness=0.1, contrast=0.1),
+         
+         # DATA AUGMENTATION DE COR (Substitui o Reinhard)
+         # Ensinamos a rede: "Não ligue se a imagem for um pouco mais clara, escura ou saturada"
+         transforms.ColorJitter(brightness=0.2, contrast=0.2, saturation=0.2, hue=0.02),
+         
          transforms.ToTensor(),
+         # Normalização padrão do ImageNet (Média/Std matemáticos dos pixels)
          transforms.Normalize(mean=[0.485, 0.456, 0.406], std=[0.229, 0.224, 0.225])
      ])
      
@@ -144,16 +106,9 @@ def get_transforms(resolution):
      return train_transform, val_transform
     
 def calculate_class_weights(labels):
-    """
-    calcula pesos inversos para lidar com desbalanceamento de classes
-    'Wighted Cros Entropy Loss' mencionada no artigos
-    tensor de pesos para passar ao loss function
-    """
-    
     count_dict = Counter(labels)
     total_sample = len(labels)
     num_classes = len(settings.CLASSES)
-    
     weights = []
     
     for i in range(num_classes):
@@ -161,8 +116,7 @@ def calculate_class_weights(labels):
         if count > 0:
             w = total_sample / (num_classes * count)
         else:
-            w = 1.0 #Fallback
-        
+            w = 1.0
         weights.append(w)
     
     return torch.tensor(weights, dtype=torch.float)
