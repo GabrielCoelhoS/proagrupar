@@ -2,6 +2,7 @@ import torch
 import numpy as np
 import csv
 import os
+import matplotlib.pyplot as plt
 from sklearn.metrics import confusion_matrix, classification_report, f1_score, precision_score, recall_score
 
 class MetricMonitor:
@@ -59,6 +60,97 @@ def save_results_experiment(filename, experiment_name, results_dict):
         if not file_exists:
             writer.writeheader()
             
-        row = {'Experimento': {experiment_name}}
+        row = {'Experimento': experiment_name}
         row.update(results_dict)
         writer.writerow(row)
+
+def save_per_class(filename, targets_test, preds_test, class_names):
+    report = classification_report(
+    targets_test, preds_test, target_names=class_names, output_dict=True, zero_division=0
+    )
+
+    # Apenas linhas das classes
+    rows = []
+    for cls in class_names:
+        row = report[cls]
+        rows.append({
+            "class": cls,
+            "precision": row["precision"],
+            "recall": row["recall"],
+            "f1": row["f1-score"],
+            "support": row["support"],
+        })
+
+
+
+    file_exists = os.path.isfile(filename)
+    
+    with open(filename, mode='w', newline='') as file:
+        writer = csv.DictWriter(file, fieldnames=["class", "precision", "recall", "f1", "support"])
+        if not file_exists:
+            writer.writeheader()
+
+        writer.writerows(rows)
+
+
+def save_overall_metrics(filename, targets_test, preds_test):
+    report = classification_report(
+        targets_test, preds_test, output_dict=True, zero_division=0
+    )
+
+    row = {
+        "accuracy": report["accuracy"],
+        "macro_precision": report["macro avg"]["precision"],
+        "macro_recall": report["macro avg"]["recall"],
+        "macro_f1": report["macro avg"]["f1-score"],
+        "weighted_precision": report["weighted avg"]["precision"],
+        "weighted_recall": report["weighted avg"]["recall"],
+        "weighted_f1": report["weighted avg"]["f1-score"],
+    }
+
+    file_exists = os.path.isfile(filename)
+    with open(filename, mode='a', newline='') as file:
+        writer = csv.DictWriter(file, fieldnames=list(row.keys()))
+        if not file_exists:
+            writer.writeheader()
+        writer.writerow(row)
+
+    return row
+
+
+def save_confusion_matrix_csv(filename, targets_test, preds_test, class_names):
+    cm = confusion_matrix(targets_test, preds_test, labels=list(range(len(class_names))))
+
+    with open(filename, mode='w', newline='') as file:
+        writer = csv.writer(file)
+        writer.writerow(["true\\pred"] + class_names)
+        for i, class_name in enumerate(class_names):
+            writer.writerow([class_name] + cm[i].tolist())
+
+    return cm
+
+
+def save_confusion_matrix_plot(filename, targets_test, preds_test, class_names):
+    cm = confusion_matrix(targets_test, preds_test, labels=list(range(len(class_names))))
+
+    fig, ax = plt.subplots(figsize=(6, 5))
+    im = ax.imshow(cm, cmap="Blues")
+    fig.colorbar(im, ax=ax)
+
+    ax.set_xticks(range(len(class_names)))
+    ax.set_yticks(range(len(class_names)))
+    ax.set_xticklabels(class_names, rotation=45, ha="right")
+    ax.set_yticklabels(class_names)
+    ax.set_xlabel("Predito")
+    ax.set_ylabel("Verdadeiro")
+    ax.set_title("Matriz de Confusao")
+
+    for i in range(cm.shape[0]):
+        for j in range(cm.shape[1]):
+            ax.text(j, i, int(cm[i, j]), ha="center", va="center", color="black")
+
+    fig.tight_layout()
+    fig.savefig(filename, dpi=300, bbox_inches="tight")
+    plt.close(fig)
+
+    return cm
