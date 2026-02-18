@@ -106,7 +106,7 @@ def main():
     print(f"Device: {settings.DEVICE}")
     print(f"Learning Rate Base: {settings.LEARNING_RATE}")
     
-    RESOLUTIONS = [64, 128, 224, 512]
+    RESOLUTIONS = [64, 128, 224]
     DATA_FRACTIONS = [0.25, 0.50, 1.0]
     
     all_files, all_labels = dataset.get_all_filepaths(settings.POOL_DIR)

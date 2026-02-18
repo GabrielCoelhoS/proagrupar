@@ -145,7 +145,7 @@ class HybridCNNMamba(nn.Module):
         self.layers = nn.ModuleList([
             VSSBlock(d_model=self.mamba_dim, d_state=16)
             for _ in range(depth)
-        ])
+        ]) 
         
         
         self.norm_f = nn.LayerNorm(self.mamba_dim)
