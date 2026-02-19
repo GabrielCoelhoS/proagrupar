@@ -8,6 +8,7 @@ from sklearn.model_selection import StratifiedKFold
 import gc
 from tqdm import tqdm
 import shutil 
+import time
 
 import settings
 import dataset
@@ -106,6 +107,9 @@ def main():
     print(f"Device: {settings.DEVICE}")
     print(f"Learning Rate Base: {settings.LEARNING_RATE}")
     
+    timestamp = int(time.time())
+    print(f"[INFO] ID da Execução (Timestamp): {timestamp}")
+    
     RESOLUTIONS = [64, 128, 224]
     DATA_FRACTIONS = [0.25, 0.50, 1.0]
     
@@ -115,7 +119,7 @@ def main():
     
     for res in RESOLUTIONS:
         for frac in DATA_FRACTIONS:
-            exp_name = f"CNNMamba_Res{res}_Data{int(frac*100)}"
+            exp_name = f"CNNMamba_Res{res}_Data{int(frac*100)}_{timestamp}"
             print(f"\n[INFO] >>> EXPERIMENTO: {exp_name}")
             
             best_exp_f1 = -1.0
