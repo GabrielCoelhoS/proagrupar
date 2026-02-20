@@ -99,11 +99,14 @@ def main():
         model = HybridCNNMamba(num_classes=settings.NUM_CLASSES).to(settings.DEVICE)
         state_dict = torch.load(ckpt_path, map_location=settings.DEVICE)
         model.load_state_dict(state_dict)
+        mamba_blocks = model.mamba_depth
+        unfrozen_backbone_tensors = model.unfrozen_backbone_param_tensors
 
         criterion = nn.CrossEntropyLoss()
         monitor_results, targets_test, preds_test = evaluate_checkpoint(model, test_loader, criterion)
 
-        exp_output_dir = os.path.join(output_dir, exp_name)
+        exp_result_id = f"{exp_name}_Mamba{mamba_blocks}_Unfrozen{unfrozen_backbone_tensors}"
+        exp_output_dir = os.path.join(output_dir, exp_result_id)
         os.makedirs(exp_output_dir, exist_ok=True)
 
         overall_file = os.path.join(exp_output_dir, "overall_metrics.csv")
@@ -117,8 +120,11 @@ def main():
         metrics.save_confusion_matrix_plot(cm_png_file, targets_test, preds_test, settings.CLASSES)
 
         summary_row = {
+            "result_id": exp_result_id,
             "resolution": resolution,
             "data_pct": ckpt["data_pct"],
+            "mamba_blocks": mamba_blocks,
+            "unfrozen_backbone_tensors": unfrozen_backbone_tensors,
             "loss": f"{monitor_results['loss']:.6f}",
             "acc": f"{monitor_results['acc']:.6f}",
             "f1": f"{monitor_results['f1']:.6f}",
@@ -129,10 +135,11 @@ def main():
             "weighted_f1": f"{overall['weighted_f1']:.6f}",
         }
 
-        metrics.save_results_experiment(summary_file, exp_name, summary_row)
+        metrics.save_results_experiment(summary_file, exp_result_id, summary_row)
         print(
-            f"[OK] {exp_name} -> Acc: {monitor_results['acc']:.4f} | "
-            f"F1: {monitor_results['f1']:.4f} | Macro-F1: {overall['macro_f1']:.4f}"
+            f"[OK] {exp_result_id} -> Acc: {monitor_results['acc']:.4f} | "
+            f"F1: {monitor_results['f1']:.4f} | Macro-F1: {overall['macro_f1']:.4f} | "
+            f"Mamba: {mamba_blocks} | Unfrozen tensors: {unfrozen_backbone_tensors}"
         )
 
     print(f"\n[FINAL] Resultados salvos em: {output_dir}")

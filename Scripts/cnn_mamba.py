@@ -129,12 +129,17 @@ class HybridCNNMamba(nn.Module):
         super().__init__()
         backbone = models.mobilenet_v2(weights='IMAGENET1K_V1')
         self.features = backbone.features
+        self.mamba_depth = depth
         
         for i, param in enumerate(self.features.parameters()):
             if (i < 100):
                 param.requires_grad = False
             else:
                 param.requires_grad = True
+
+        self.total_backbone_param_tensors = sum(1 for _ in self.features.parameters())
+        self.frozen_backbone_param_tensors = sum(1 for p in self.features.parameters() if not p.requires_grad)
+        self.unfrozen_backbone_param_tensors = sum(1 for p in self.features.parameters() if p.requires_grad)
                 
         self.cnn_channels = 1280
         self.mamba_dim = 192

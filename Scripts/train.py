@@ -116,6 +116,20 @@ def main():
     all_files, all_labels = dataset.get_all_filepaths(settings.POOL_DIR)
     class_weight = dataset.calculate_class_weights(all_labels)
     print(f"[INFO] Pesos de Classe: {class_weight}")
+
+    model_probe = HybridCNNMamba(num_classes=settings.NUM_CLASSES).to(settings.DEVICE)
+    model_config = {
+        "mamba_blocks": model_probe.mamba_depth,
+        "unfrozen_backbone_tensors": model_probe.unfrozen_backbone_param_tensors,
+    }
+    print(
+        f"[INFO] Configuração do modelo: "
+        f"{model_config['mamba_blocks']} blocos Mamba | "
+        f"{model_config['unfrozen_backbone_tensors']} tensores descongelados no backbone"
+    )
+    del model_probe
+    torch.cuda.empty_cache()
+    gc.collect()
     
     for res in RESOLUTIONS:
         for frac in DATA_FRACTIONS:
@@ -168,6 +182,9 @@ def main():
                 values = [f[metric] for f in fold_results]
                 final_stats[f"{metric}_mean"] = f"{np.mean(values):.4f}"
                 final_stats[f"{metric}_std"] = f"{np.std(values):.4f}" 
+
+            final_stats["mamba_blocks"] = model_config["mamba_blocks"]
+            final_stats["unfrozen_backbone_tensors"] = model_config["unfrozen_backbone_tensors"]
                 
             print(f"[FINAL] {exp_name} -> F1 Média: {final_stats['f1_mean']}")
             metrics.save_results_experiment("RESULTADOS_FINAIS.csv", exp_name, final_stats)
